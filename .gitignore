@@ -1,0 +1,7 @@
+keys/
+.env
+.vscode
+tmp/
+# Python
+__pycache__/
+*.py[cod]

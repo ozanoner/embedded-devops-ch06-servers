@@ -1,0 +1,122 @@
+services:
+  signserver:
+    image: keyfactor/signserver-ce:7.3.2        # pinned; verified on Docker Hub (2025-12-16)
+    container_name: signserver
+    hostname: signserver
+    networks:
+      - stack-net
+    ports:
+      - "8081:8080"      # AdminWeb / Client Web (HTTP) — host browser only
+      - "8444:8443"     # HTTPS endpoints (workers, Client Web) — host browser only
+    environment:
+      ALLOW_ANY: "false"          # client-cert variant: CA check active
+    volumes:
+      - ./keys/ManagementCA.crt:/mnt/external/secrets/tls/cas/ManagementCA.crt:ro   # client-CA trust (EJBCA ManagementCA)
+      - ./keys/server.jks:/opt/keyfactor/secrets/external/tls/ks/server.jks:ro       # TLS server keystore (EJBCA-issued)
+      - ./keys/server.storepasswd:/opt/keyfactor/secrets/external/tls/ks/server.storepasswd:ro
+      - ./keys/signer01.p12:/mnt/external/secrets/signer01.p12:ro                   # signing key for the PlainSigner crypto token
+      - signserver-data:/mnt/persistent                                             # persists H2 config DB + generated TLS
+    restart: unless-stopped
+  ejbca:
+    image: keyfactor/ejbca-ce:9.3.7
+    container_name: ejbca
+    hostname: ejbca
+    networks:
+      - stack-net
+    ports:
+      - "8082:8080"
+      - "8445:8443"
+    environment:
+      TLS_SETUP_ENABLED: "true"     # client-cert authenticated AdminWeb (superadmin cert from ManagementCA)
+    volumes:
+      - ejbca-data:/mnt/persistent  # persists the CA, profiles, and issued certs
+    restart: unless-stopped
+  runner:
+    image: ghcr.io/actions/actions-runner:2.336.0   # current GitHub runner release at time of validation
+    container_name: github-runner
+    depends_on:
+      - signserver
+    env_file:
+      - .env
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        if [ ! -f /home/runner/.runner ]; then
+          /home/runner/config.sh \
+            --url "$${RUNNER_REPOSITORY_URL}" \
+            --token "$${RUNNER_TOKEN}" \
+            --name "$${RUNNER_NAME}" \
+            --labels "$${RUNNER_LABELS}" \
+            --unattended \
+            --replace;
+        fi
+        /home/runner/run.sh
+    networks:
+      - stack-net
+    environment:
+      RUNNER_ALLOW_RUNASROOT: "1"
+      RUNNER_NAME: ${RUNNER_NAME:-github-runner}
+      RUNNER_SCOPE: repo
+      RUNNER_REPOSITORY_URL: ${RUNNER_REPOSITORY_URL:-https://github.com/OWNER/REPO}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}          # set this in .env before starting the runner
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,linux,local}
+    volumes:
+      # client cert the runner presents when asking SignServer for signatures
+      - ./keys/client.crt:/home/runner/keys/client.crt:ro
+      - ./keys/client.key:/home/runner/keys/client.key:ro
+      # persist registration so the runner doesn't re-register on every recreate
+      - runner-data:/home/runner
+      # mount the Docker socket ONLY if your jobs need Docker-in-Docker:
+      # - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+  enroll:
+    # Device-enrollment service for ESP32 IoT devices: devices present a factory
+    # client cert over mTLS, POST a CSR, and get a ManagementCA-issued cert back.
+    # Run scripts/35-issue-enroll-certs.sh (or the full setup) so the certs below
+    # exist before `docker compose up -d`. Stdlib-only Python, see enroll/enroll.py.
+    image: python:3.12-slim
+    container_name: enroll
+    hostname: enroll
+    depends_on:
+      - ejbca
+    networks:
+      - stack-net
+    ports:
+      - "9443:9443"        # device-facing HTTPS endpoint (host reachable for testing)
+    environment:
+      # admin credentials for the EJBCA REST API come from env vars (never hardcoded):
+      # the superadmin client cert authenticates to EJBCA over mutual TLS
+      EJBCA_API_URL: "https://ejbca:8443/ejbca/ejbca-rest-api"
+      EJBCA_CLIENT_CERT: "/app/keys/superadmin.crt"
+      EJBCA_CLIENT_KEY: "/app/keys/superadmin.key"
+      EJBCA_CA_NAME: "ManagementCA"
+      EJBCA_CERT_PROFILE: "ENDUSER"
+      EJBCA_EE_PROFILE: "EMPTY"
+      EJBCA_EE_PASSWORD: "changeit"      # enrollment code for auto-created end entities
+      SERVER_CERT: "/app/keys/enroll.crt"
+      SERVER_KEY: "/app/keys/enroll.key"
+      CA_BUNDLE: "/app/keys/ManagementCA.crt"
+    volumes:
+      - ./enroll/enroll.py:/app/enroll.py:ro
+      # device trust (mTLS) + EJBCA server trust (all issued by ManagementCA)
+      - ./keys/ManagementCA.crt:/app/keys/ManagementCA.crt:ro
+      - ./keys/enroll.crt:/app/keys/enroll.crt:ro            # this service's TLS cert (CN=enroll)
+      - ./keys/enroll.key:/app/keys/enroll.key:ro
+      - ./keys/superadmin.crt:/app/keys/superadmin.crt:ro    # admin client cert for EJBCA REST
+      - ./keys/superadmin.key:/app/keys/superadmin.key:ro
+    command: ["python", "/app/enroll.py"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,ssl;c=ssl.create_default_context();c.check_hostname=False;c.verify_mode=ssl.CERT_NONE;urllib.request.urlopen('https://localhost:9443/health',context=c,timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+volumes:
+  ejbca-data:
+  signserver-data:
+  runner-data:
+networks:
+  stack-net:
+    driver: bridge
