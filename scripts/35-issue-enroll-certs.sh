@@ -100,4 +100,4 @@ wait_for_log enroll "enroll listening" "enroll service" 60 || true
 
 echo
 ok "Step 35 complete: REST enabled, enroll + device-factory certs issued, service started."
-checkpoint "Next: wire SignServer (step 40) — or skip ahead to verify the enroll service."
+checkpoint "Next: wire SignServer (step 40)."

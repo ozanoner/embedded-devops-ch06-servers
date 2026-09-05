@@ -86,4 +86,4 @@ for c in superadmin signserver signserver-admin runner signer01; do
   fi
 done
 
-checkpoint "Certificates issued. Next: wire SignServer to use them (step 40)."
+checkpoint "Certificates issued. Next: issue the enroll-service certificates and start 'enroll' (step 35)."
