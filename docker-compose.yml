@@ -65,6 +65,9 @@ services:
       # client cert the runner presents when asking SignServer for signatures
       - ./keys/client.crt:/home/runner/keys/client.crt:ro
       - ./keys/client.key:/home/runner/keys/client.key:ro
+      # CA that issued the SignServer TLS cert — lets the runner verify the
+      # server with --cacert instead of -k
+      - ./keys/ManagementCA.crt:/home/runner/keys/ManagementCA.crt:ro
       # persist registration so the runner doesn't re-register on every recreate
       - runner-data:/home/runner
       # mount the Docker socket ONLY if your jobs need Docker-in-Docker:

@@ -13,7 +13,8 @@ printf 'replicated-setup verification %s\n' "$(date -u +%FT%TZ)" > /tmp/e2e-payl
 docker cp /tmp/e2e-payload.txt github-runner:/tmp/e2e-payload.txt
 
 info "Calling PlainSigner from inside the runner container (mutual TLS)..."
-docker exec github-runner bash -lc 'curl -k -s -o /tmp/e2e-sig.bin -w "HTTP %{http_code}\n" -G \
+docker exec github-runner bash -lc 'curl -s -o /tmp/e2e-sig.bin -w "HTTP %{http_code}\n" -G \
+  --cacert /home/runner/keys/ManagementCA.crt \
   --cert /home/runner/keys/client.crt --key /home/runner/keys/client.key \
   "https://signserver:8443/signserver/process" \
   --data-urlencode "workerName=PlainSigner" \

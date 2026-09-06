@@ -92,7 +92,8 @@ else
 # Prefer signing from inside the runner container (proves the real runner path);
   # fall back to the host using the runner's client cert.
   if docker cp "$payload" github-runner:/tmp/hc-payload.txt >/dev/null 2>&1; then
-    ok_code="$(docker exec github-runner bash -lc 'curl -k -s -o /tmp/hc-sig.bin -w "%{http_code}" -G \
+    ok_code="$(docker exec github-runner bash -lc 'curl -s -o /tmp/hc-sig.bin -w "%{http_code}" -G \
+      --cacert /home/runner/keys/ManagementCA.crt \
       --cert /home/runner/keys/client.crt --key /home/runner/keys/client.key \
       "https://signserver:8443/signserver/process" \
       --data-urlencode "workerName=PlainSigner" \
