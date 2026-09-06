@@ -90,7 +90,7 @@ fi
 # ---------------------------------------------------------------------------
 KEYS_FILES="ManagementCA.crt superadmin.p12 superadmin.crt superadmin.key \
 signserver.p12 signserver-admin.p12 signserver-admin.crt signserver-admin.key \
-runner.p12 signer01.p12 signer01.crt server.jks server.storepasswd \
+runner.p12 signer01.p12 signer01.crt signer01-pub.pem server.jks server.storepasswd \
 client.crt client.key enroll.p12 enroll.crt enroll.key \
 device-factory.p12 device-factory.crt device-factory.key worker.properties \
 ca.crt ca.key ca.srl client.csr client-browser.p12 client.p12 superadmin-browser.p12"

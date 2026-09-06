@@ -22,12 +22,17 @@ docker exec github-runner bash -lc 'curl -s -o /tmp/e2e-sig.bin -w "HTTP %{http_
 
 docker cp github-runner:/tmp/e2e-sig.bin /tmp/e2e-sig.bin
 
-info "Verifying the signature with the signer public key..."
+info "Verifying the RSA-PSS signature with the signer public key..."
 openssl x509 -in "$KEYS_DIR/signer01.crt" -pubkey -noout > /tmp/signer01.pub
-if openssl dgst -sha256 -verify /tmp/signer01.pub -signature /tmp/e2e-sig.bin /tmp/e2e-payload.txt >/dev/null 2>&1; then
-  ok "Signature verified OK — the runner can sign through SignServer."
+# PlainSigner signs with SHA256withRSAandMGF1 = RSA-PSS (SHA-256, MGF1, salt 32):
+# the exact scheme ESP32 Secure Boot v2 verifies. In production the 'data' would
+# be a secure-padded ESP-IDF image and this signature feeds 'idf.py secure-sign-data'.
+if openssl dgst -sha256 \
+    -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \
+    -verify /tmp/signer01.pub -signature /tmp/e2e-sig.bin /tmp/e2e-payload.txt >/dev/null 2>&1; then
+  ok "RSA-PSS signature verified OK — the runner can sign ESP32 Secure Boot v2 images (RSA-3072/PSS)."
 else
-  fail "Signature did not verify. Remember: the process endpoint signs the exact raw bytes of 'data' (no base64)."
+  fail "Signature did not verify. Remember: the process endpoint signs the exact raw bytes of 'data' (no base64); verify with RSA-PSS salt=32."
 fi
 
 echo

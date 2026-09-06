@@ -35,12 +35,19 @@ signserver_cli wsadmins -list
 
 # ---------------------------------------------------------------------------
 # 2) Crypto token (CryptoTokenP12) + PlainSigner worker
+#    PlainSigner is the ESP32 code-signing worker: RSA-3072 (from step 30),
+#    signed with RSA-PSS (SHA-256, MGF1, salt 32) = Secure Boot v2 scheme.
 # ---------------------------------------------------------------------------
+# Fail fast if step 30 did not produce the required RSA-3072/4096 key.
+KEYBITS="$(openssl x509 -in "$KEYS_DIR/signer01.crt" -noout -text 2>/dev/null | awk '/Public-Key:/{gsub(/[^0-9]/,"",$2); print $2; exit}')"
+if [[ "$KEYBITS" != "3072" && "$KEYBITS" != "4096" ]]; then
+  fail "signer01 key is RSA-${KEYBITS:-?}; ESP32 Secure Boot v2 needs RSA-3072/4096 (re-run step 30 after deleting keys/signer01.*)."
+fi
 WSTATUS="$(signserver_cli getstatus brief PlainSigner 2>/dev/null || true)"
 if [[ "$WSTATUS" == *'Active'* ]]; then
   info "PlainSigner worker already configured — skipping."
 else
-  info "Creating CryptoTokenP12 + PlainSigner via setproperties..."
+  info "Creating CryptoTokenP12 + PlainSigner (RSA-PSS for ESP32 Secure Boot v2) via setproperties..."
   cat > /tmp/worker.properties <<EOF
 WORKERGENID1.TYPE=CRYPTO_WORKER
 WORKERGENID1.IMPLEMENTATION_CLASS=org.signserver.server.signers.CryptoWorker
@@ -57,7 +64,8 @@ WORKERGENID2.NAME=PlainSigner
 WORKERGENID2.AUTHTYPE=NOAUTH
 WORKERGENID2.CRYPTOTOKEN=CryptoTokenP12
 WORKERGENID2.DEFAULTKEY=signer01
-WORKERGENID2.SIGNATUREALGORITHM=SHA256withRSA
+# ESP32 Secure Boot v2 verifies RSA-PSS (SHA-256, MGF1, salt length 32):
+WORKERGENID2.SIGNATUREALGORITHM=SHA256withRSAandMGF1
 WORKERGENID2.DISABLEKEYUSAGECOUNTER=true
 EOF
   docker cp /tmp/worker.properties signserver:/tmp/worker.properties

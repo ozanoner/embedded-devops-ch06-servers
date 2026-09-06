@@ -8,9 +8,9 @@ banner "Step 30 — Issue server, client, and signing certificates from Manageme
 docker exec ejbca true 2>/dev/null || fail "The 'ejbca' container is not running. Run step 10 first."
 [[ -s "$KEYS_DIR/ManagementCA.crt" ]] || fail "keys/ManagementCA.crt is missing — run step 20 first."
 
-# issue_ee <user> <CN> <certprofile> <altname-or-''>
+# issue_ee <user> <CN> <certprofile> <altname-or-''> [keyspec]   (RSA key size; default 2048)
 issue_ee() {
-  local user="$1" cn="$2" profile="$3" altname="$4"
+  local user="$1" cn="$2" profile="$3" altname="$4" keyspec="${5:-2048}"
   if [[ -s "$KEYS_DIR/$user.p12" ]]; then
     info "keys/$user.p12 already exists — skipping '$user'."
     return
@@ -22,8 +22,8 @@ issue_ee() {
     warn "addendentity for '$user' reported an error (it may already exist from a partial run). Continuing."
   fi
   ra_setclearpwd "$user" "$P12_PASS" || fail "setclearpwd failed for '$user'."
-  info "Generating keystore for '$user' (batch)..."
-  if ! docker exec ejbca sh -c "mkdir -p /tmp/p12 && /opt/keyfactor/bin/ejbca.sh batch $user --keyalg RSA --keyspec 2048 -dir /tmp/p12 -u ejbca --clipassword ejbca >/tmp/batch.log 2>&1 && test -s /tmp/p12/$user.p12"; then
+  info "Generating keystore for '$user' (batch, RSA $keyspec)..."
+  if ! docker exec ejbca sh -c "mkdir -p /tmp/p12 && /opt/keyfactor/bin/ejbca.sh batch $user --keyalg RSA --keyspec $keyspec -dir /tmp/p12 -u ejbca --clipassword ejbca >/tmp/batch.log 2>&1 && test -s /tmp/p12/$user.p12"; then
     docker exec ejbca cat /tmp/batch.log 2>/dev/null || true
     fail "batch generation failed for '$user' (see log above)."
   fi
@@ -36,7 +36,7 @@ issue_ee() {
 issue_ee signserver       "signserver"       SERVER  "dNSName=signserver,dNSName=localhost"
 issue_ee signserver-admin "signserver-admin" ENDUSER ""
 issue_ee runner           "runner"           ENDUSER ""
-issue_ee signer01         "signer01"         ENDUSER ""
+issue_ee signer01         "signer01"         ENDUSER "" 3072   # RSA-3072: ESP32 Secure Boot v2 requires RSA-3072/4096
 
 # ---------------------------------------------------------------------------
 # SignServer TLS keystore: signserver.p12 -> server.jks (+ password file)
@@ -77,6 +77,16 @@ extract_pem() {
 extract_pem runner          client.crt client.key          # cert the GitHub runner presents
 extract_pem signserver-admin signserver-admin.crt signserver-admin.key
 extract_pem signer01        signer01.crt ""
+
+# Public key of the ESP32 signing key (RSA-3072). This is the ONLY part of the
+# signing key that ever leaves this host — the ESP-IDF signing flow needs the
+# public PEM (idf.py/espsecure assemble + verify), never the private key, which
+# stays inside signer01.p12 (mounted into SignServer).
+if [[ ! -s "$KEYS_DIR/signer01-pub.pem" ]]; then
+  openssl x509 -in "$KEYS_DIR/signer01.crt" -pubkey -noout > "$KEYS_DIR/signer01-pub.pem"
+  chmod 644 "$KEYS_DIR/signer01-pub.pem"
+fi
+ok "Public signing key exported -> keys/signer01-pub.pem"
 
 echo
 info "Issued certificates (subject <- issuer):"

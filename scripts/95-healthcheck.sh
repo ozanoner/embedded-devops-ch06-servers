@@ -117,10 +117,12 @@ else
   fi
 
   openssl x509 -in "$KEYS_DIR/signer01.crt" -pubkey -noout > /tmp/hc-signer.pub 2>/dev/null || true
-  if [[ -s "$sig" ]] && openssl dgst -sha256 -verify /tmp/hc-signer.pub -signature "$sig" "$payload" >/dev/null 2>&1; then
-    pass "signature produced and verified OK (code-signing path works)"
+  if [[ -s "$sig" ]] && openssl dgst -sha256 \
+      -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \
+      -verify /tmp/hc-signer.pub -signature "$sig" "$payload" >/dev/null 2>&1; then
+    pass "RSA-PSS signature produced and verified OK (ESP32 Secure Boot v2 code-signing path)"
   else
-    failcheck "end-to-end signing/verification failed"
+    failcheck "end-to-end signing/verification failed (RSA-PSS salt 32)"
   fi
   rm -f "$payload" "$sig" /tmp/hc-signer.pub /tmp/hc-sig.bin 2>/dev/null || true
 fi

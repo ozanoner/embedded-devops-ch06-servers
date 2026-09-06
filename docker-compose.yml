@@ -14,7 +14,7 @@ services:
       - ./keys/ManagementCA.crt:/mnt/external/secrets/tls/cas/ManagementCA.crt:ro   # client-CA trust (EJBCA ManagementCA)
       - ./keys/server.jks:/opt/keyfactor/secrets/external/tls/ks/server.jks:ro       # TLS server keystore (EJBCA-issued)
       - ./keys/server.storepasswd:/opt/keyfactor/secrets/external/tls/ks/server.storepasswd:ro
-      - ./keys/signer01.p12:/mnt/external/secrets/signer01.p12:ro                   # signing key for the PlainSigner crypto token
+      - ./keys/signer01.p12:/mnt/external/secrets/signer01.p12:ro                   # RSA-3072 signing key for the PlainSigner worker (ESP32 Secure Boot v2)
       - signserver-data:/mnt/persistent                                             # persists H2 config DB + generated TLS
     restart: unless-stopped
   ejbca:
